@@ -177,4 +177,4 @@ deb-src https://mirrors.shanhe.com/ubuntu/ focal-backports main restricted unive
 EOT
 
 COPY ./appendix/entrypoint.sh /docker/entrypoint.sh
-# ENTRYPOINT ["sh", "/docker/entrypoint.sh"]
+ENTRYPOINT ["sh", "/docker/entrypoint.sh"]
