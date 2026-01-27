@@ -33,6 +33,7 @@ RUN sed -i s@/archive.ubuntu.com/@/mirrors.aliyun.com/@g /etc/apt/sources.list.d
 	wget \
 	tzdata \
 	tmux \
+	btop \
 	locales \
 	&& rm -rf /var/lib/apt/lists/* \
 	&& apt-get clean \
@@ -76,8 +77,10 @@ RUN wget --no-hsts --quiet https://github.com/conda-forge/miniforge/releases/dow
 	&& find ${CONDA_DIR} -follow -type f -name '*.pyc' -delete \
 	&& ${CONDA_DIR}/bin/conda clean --force-pkgs-dirs --all --yes \
 	&& ${CONDA_DIR}/bin/conda init bash \
-	&& mamba shell init --shell bash
+	&& mamba shell init --shell bash \
+	&& pip install --no-cache-dir mlflow aim
 
+COPY ./rootfs/aim ./rootfs/mlflow /etc/init.d/
 
 COPY --from=ghcr.io/astral-sh/uv:${UV_VERSION} /uv /uvx /bin/
 
@@ -104,10 +107,9 @@ RUN rm -rf /root/.ssh/ && \
 	&& printf "Host *\n StrictHostKeyChecking no\n" >> /root/.ssh/config
 
 RUN mkdir -p /etc/pki/tls/certs \
-	&& cp /etc/ssl/certs/ca-certificates.crt /etc/pki/tls/certs/ca-bundle.crt \
+	&& cp /etc/ssl/certs/ca-certificates.crt /etc/pki/tls/certs/ca-bundle.crt
 
-	RUN rm -rf /root/.cache | true
-
+RUN rm -rf /root/.cache | true
 
 
 # UNISON

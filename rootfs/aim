@@ -1,0 +1,95 @@
+#!/bin/sh
+### BEGIN INIT INFO
+# Provides:          aim
+# Required-Start:    $local_fs $network $remote_fs
+# Required-Stop:     $local_fs $network $remote_fs
+# Default-Start:     2 3 4 5
+# Default-Stop:      0 1 6
+# Short-Description: Aim Tracking Server
+# Description:       Aim - An easy-to-use and performant experiment tracker
+### END INIT INFO
+
+# Change these variables according to your setup
+NAME="aim"
+CONDA_HOME="/opt/conda/"
+DAEMON="${CONDA_HOME}/bin/aim"
+WORKDIR="/jczhang02/aim"
+DAEMON_ARGS="up --host 0.0.0.0 --port 43800 --repo ${WORKDIR}"
+
+PIDFILE="/var/run/$NAME.pid"
+USER="root"
+LOGFILE="/var/log/aim/aim.log"
+
+# Load the VERBOSE setting and other rcS variables
+. /lib/init/vars.sh
+
+# Define LSB log_* functions.
+. /lib/lsb/init-functions
+
+# Make sure directories exist
+create_directories() {
+	mkdir -p ${WORKDIR}
+	mkdir -p /var/log/aim
+	${DAEMON} init --repo ${WORKDIR} -y
+}
+
+case "$1" in
+start)
+	log_daemon_msg "Starting $NAME"
+
+	# Create necessary directories
+	create_directories
+
+	# Check if process is already running
+	if [ -f $PIDFILE ]; then
+		PID=$(cat $PIDFILE)
+		if [ -d "/proc/$PID" ]; then
+			log_warning_msg "$NAME is already running (pid $PID)"
+			log_end_msg 1
+			exit 1
+		else
+			rm -f $PIDFILE
+		fi
+	fi
+
+	# Start the service
+	start-stop-daemon --start --quiet --pidfile $PIDFILE --exec $DAEMON --test >/dev/null ||
+		return 1
+	start-stop-daemon --start --quiet --pidfile $PIDFILE --exec $DAEMON --background \
+		--make-pidfile --chuid $USER --user $USER -- $DAEMON_ARGS >>$LOGFILE 2>&1 ||
+		return 2
+
+	log_end_msg 0
+	;;
+
+stop)
+	log_daemon_msg "Stopping $NAME"
+	start-stop-daemon --stop --quiet --retry=TERM/30/KILL/5 --pidfile $PIDFILE
+	RETVAL="$?"
+	[ "$RETVAL" = 2 ] && return 2
+
+	# Wait for children to finish too if this is a daemon that forks
+	start-stop-daemon --stop --quiet --oknodo --retry=0/30/KILL/5 --exec $DAEMON
+	[ "$?" = 2 ] && return 2
+
+	rm -f $PIDFILE
+	log_end_msg 0
+	;;
+
+status)
+	status_of_proc -p $PIDFILE "$DAEMON" "$NAME" && exit 0 || exit $?
+	;;
+
+restart)
+	$0 stop
+	sleep 1
+	$0 start
+	;;
+
+*)
+	echo "Usage: $0 {start|stop|status|restart}"
+	exit 1
+	;;
+esac
+
+exit 0

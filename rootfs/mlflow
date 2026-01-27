@@ -1,0 +1,60 @@
+#!/bin/sh
+### BEGIN INIT INFO
+# Provides:          mlflow
+# Required-Start:    $local_fs $network $remote_fs
+# Required-Stop:     $local_fs $network $remote_fs
+# Default-Start:     2 3 4 5
+# Default-Stop:      0 1 6
+# Short-Description: MLflow Tracking Server
+# Description:       MLflow Tracking Server for Machine Learning Experiment Management
+### END INIT INFO
+# Change these variables according to your setup
+NAME="mlflow"
+CONDA_HOME="/opt/conda"
+WORK_DIR="/jczhang02/mlflow"
+DAEMON="${CONDA_HOME}/bin/mlflow"
+DAEMON_ARGS="server --backend-store-uri='sqlite:////${WORK_DIR}/mlflow.db' --artifacts-destination ${WORK_DIR}/artifacts --host 0.0.0.0 --port 5000"
+PIDFILE="/var/run/$NAME.pid"
+USER="root"
+# Load the VERBOSE setting and other rcS variables
+. /lib/init/vars.sh
+# Define LSB log_* functions.
+. /lib/lsb/init-functions
+case "$1" in
+start)
+	log_daemon_msg "Starting $NAME"
+
+	# Ensure directories exist and have correct permissions
+	mkdir -p ${WORK_DIR}/artifacts
+
+	# Start the service
+	start-stop-daemon --start --quiet --pidfile $PIDFILE --exec $DAEMON --test >/dev/null ||
+		return 1
+	start-stop-daemon --start --quiet --pidfile $PIDFILE --exec $DAEMON --background \
+		--make-pidfile --chuid $USER --user $USER -- $DAEMON_ARGS ||
+		return 2
+	log_end_msg 0
+	;;
+stop)
+	log_daemon_msg "Stopping $NAME"
+	start-stop-daemon --stop --quiet --retry=TERM/30/KILL/5 --pidfile $PIDFILE
+	RETVAL="$?"
+	[ "$RETVAL" = 2 ] && return 2
+	start-stop-daemon --stop --quiet --oknodo --retry=0/30/KILL/5 --exec $DAEMON
+	[ "$?" = 2 ] && return 2
+	rm -f $PIDFILE
+	log_end_msg 0
+	;;
+status)
+	status_of_proc -p $PIDFILE "$DAEMON" "$NAME" && exit 0 || exit $?
+	;;
+restart)
+	$0 stop
+	$0 start
+	;;
+*)
+	echo "Usage: $0 {start|stop|status|restart}"
+	exit 1
+	;;
+esac
+exit 0
