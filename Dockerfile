@@ -38,9 +38,8 @@ RUN sed -i s@/archive.ubuntu.com/@/mirrors.aliyun.com/@g /etc/apt/sources.list.d
 	&& rm -rf /var/lib/apt/lists/* \
 	&& apt-get clean \
 	&& echo "en_US.UTF-8 UTF-8" > /etc/locale.gen \
-	&& locale-gen
-
-RUN bash -c "$(curl -fsSL https://raw.githubusercontent.com/ohmybash/oh-my-bash/master/tools/install.sh)"
+	&& locale-gen \
+	&& bash -c "$(curl -fsSL https://raw.githubusercontent.com/ohmybash/oh-my-bash/master/tools/install.sh)"
 
 
 # common
@@ -85,9 +84,8 @@ COPY ./rootfs/aim ./rootfs/mlflow /etc/init.d/
 COPY --from=ghcr.io/astral-sh/uv:${UV_VERSION} /uv /uvx /bin/
 
 RUN  pip install --upgrade pip --no-cache-dir \
-	&& ln -s /opt/conda/bin/pip /usr/local/bin/pip3
-
-RUN apt-get update \
+	&& ln -s /opt/conda/bin/pip /usr/local/bin/pip3 \
+	&& apt-get update \
 	&& apt-get install -y  --allow-downgrades --allow-change-held-packages --no-install-recommends \
 	&& apt-get install -y --no-install-recommends openssh-client openssh-server \
 	&& mkdir -p /var/run/sshd \

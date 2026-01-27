@@ -13,7 +13,7 @@ NAME="mlflow"
 CONDA_HOME="/opt/conda"
 WORK_DIR="/jczhang02/mlflow"
 DAEMON="${CONDA_HOME}/bin/mlflow"
-DAEMON_ARGS="server --backend-store-uri='sqlite:////${WORK_DIR}/mlflow.db' --artifacts-destination ${WORK_DIR}/artifacts --host 0.0.0.0 --port 5000"
+DAEMON_ARGS="server --backend-store-uri sqlite:////${WORK_DIR}/mlflow.db --artifacts-destination ${WORK_DIR}/artifacts --host 0.0.0.0 --port 5000"
 PIDFILE="/var/run/$NAME.pid"
 USER="root"
 # Load the VERBOSE setting and other rcS variables
