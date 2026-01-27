@@ -3,13 +3,15 @@
 # A100-40GB-SXM
 
 # base_image
-FROM nvidia/cuda:11.7.1-cudnn8-devel-ubuntu20.04 AS base_image
+FROM nvidia/cuda:12.6.3-cudnn-devel-ubuntu24.04 AS base_image
 LABEL maintainer="Chengrui Zhang"
 
 ENV DEBIAN_FRONTEND=noninteractive \
-	LD_LIBRARY_PATH="${LD_LIBRARY_PATH}:/usr/local/lib"
+	LD_LIBRARY_PATH="${LD_LIBRARY_PATH}:/usr/local/lib" \
+	OMB_PROMPT_SHOW_PYTHON_VENV=true
 
-RUN sed -i s@/archive.ubuntu.com/@/mirrors.aliyun.com/@g /etc/apt/sources.list \
+
+RUN sed -i s@/archive.ubuntu.com/@/mirrors.aliyun.com/@g /etc/apt/sources.list.d/ubuntu.sources \
 	&& chmod 1777 /tmp \
 	&& apt-get update \
 	&& apt-get install -y \
@@ -30,11 +32,14 @@ RUN sed -i s@/archive.ubuntu.com/@/mirrors.aliyun.com/@g /etc/apt/sources.list \
 	vim \
 	wget \
 	tzdata \
+	tmux \
 	locales \
 	&& rm -rf /var/lib/apt/lists/* \
 	&& apt-get clean \
 	&& echo "en_US.UTF-8 UTF-8" > /etc/locale.gen \
 	&& locale-gen
+
+RUN bash -c "$(curl -fsSL https://raw.githubusercontent.com/ohmybash/oh-my-bash/master/tools/install.sh)"
 
 
 # common
@@ -43,7 +48,8 @@ FROM base_image AS common
 ARG PYTHON=python3
 ARG PYTHON_VERSION=3.11.9
 ARG PYTHON_SHORT_VERSION=3.11
-ARG MINIFORGE3_VERSION=24.3.0-0
+ARG MINIFORGE3_VERSION=25.11.0-1
+ARG UV_VERSION=0.9.27
 ARG DEBIAN_FRONTEND=noninteractive
 
 ENV CUDA_HOME=/opt/conda
@@ -60,13 +66,20 @@ ENV TORCH_NVCC_FLAGS="-Xfatbin -compress-all"
 ENV CMAKE_PREFIX_PATH="$(dirname $(which conda))/../"
 ENV TZ=Asia/Shanghai
 ENV REQUESTS_CA_BUNDLE=/etc/ssl/certs/ca-certificates.crt
+ENV CONDA_DIR=/opt/conda
 
-RUN curl -L -o ~/miniforge3.sh https://github.com/conda-forge/miniforge/releases/download/${MINIFORGE3_VERSION}/Miniforge3-${MINIFORGE3_VERSION}-Linux-x86_64.sh \
-	&& chmod +x ~/miniforge3.sh \
-	&& ~/miniforge3.sh -b -p /opt/conda \
-	&& rm ~/miniforge3.sh \
-	&& /opt/conda/bin/conda init bash \
-	&& /opt/conda/bin/mamba init bash
+RUN wget --no-hsts --quiet https://github.com/conda-forge/miniforge/releases/download/${MINIFORGE3_VERSION}/Miniforge3-${MINIFORGE3_VERSION}-Linux-x86_64.sh -O /tmp/miniforge.sh \
+	&& /bin/bash /tmp/miniforge.sh -b -p ${CONDA_DIR} \
+	&& rm /tmp/miniforge.sh \
+	&& ${CONDA_DIR}/bin/conda clean --tarballs --index-cache --packages --yes \
+	&& find ${CONDA_DIR} -follow -type f -name '*.a' -delete \
+	&& find ${CONDA_DIR} -follow -type f -name '*.pyc' -delete \
+	&& ${CONDA_DIR}/bin/conda clean --force-pkgs-dirs --all --yes \
+	&& ${CONDA_DIR}/bin/conda init bash \
+	&& mamba shell init --shell bash
+
+
+COPY --from=ghcr.io/astral-sh/uv:${UV_VERSION} /uv /uvx /bin/
 
 RUN  pip install --upgrade pip --no-cache-dir \
 	&& ln -s /opt/conda/bin/pip /usr/local/bin/pip3
@@ -90,14 +103,16 @@ RUN rm -rf /root/.ssh/ && \
 	cp /root/.ssh/id_rsa.pub /root/.ssh/authorized_keys \
 	&& printf "Host *\n StrictHostKeyChecking no\n" >> /root/.ssh/config
 
-RUN mkdir -p /etc/pki/tls/certs && cp /etc/ssl/certs/ca-certificates.crt /etc/pki/tls/certs/ca-bundle.crt
+RUN mkdir -p /etc/pki/tls/certs \
+	&& cp /etc/ssl/certs/ca-certificates.crt /etc/pki/tls/certs/ca-bundle.crt \
 
-RUN rm -rf /root/.cache | true
+	RUN rm -rf /root/.cache | true
+
 
 
 # UNISON
 FROM common AS unison
-ARG UNISON_VERSION=2.53.3
+ARG UNISON_VERSION=2.53.8
 
 RUN mkdir -p /tmp/unison \
 	&& curl -L https://github.com/bcpierce00/unison/releases/download/v2.53.3/unison-2.53.3+ocaml4.08-ubuntu-x86_64.tar.gz | tar zxv -C /tmp/unison \
@@ -124,26 +139,23 @@ COPY <<"EOT" /etc/mysql/conf.d/mysql.cnf
 	innodb_lock_wait_timeout=900
 EOT
 
-COPY ./appendix/slurmdbd.conf /etc/slurm-llnl/slurmdbd.conf
-COPY ./appendix/slurm.conf /etc/slurm-llnl/slurm.conf
-
-# TODO: change file in server
-COPY <<"EOT" /etc/slurm-llnl/gres.conf
-NodeName=localhost Name=gpu File=/dev/nvidia[6-7]
-EOT
+COPY ./rootfs/slurmdbd.conf /etc/slurm/slurmdbd.conf
+COPY ./rootfs/slurm.conf /etc/slurm/slurm.conf
+COPY ./rootfs/cgroup.conf /etc/slurm/cgroup.conf
 
 RUN <<EOT bash
+	usermod -d /var/lib/mysql/ mysql
 	mkdir /var/spool/slurmd
 	mkdir /var/spool/slurmctld
-	chmod -R 777 /var/spool/slurmd
-	chmod -R 777 /var/spool/slurmctld
+	chown slurm:slurm /var/spool/slurmd
+	chown slurm:slurm /var/spool/slurmctld
 EOT
 
 
 # Shanhe
 FROM slurm AS shanhe
 
-# RUN echo "10.251.102.1 mirrors.shanhe.com" >> /etc/hosts
+RUN rm -f /opt/conda/.condarc
 
 COPY <<"EOT" /root/.condarc
 channels:
@@ -151,11 +163,13 @@ channels:
 show_channel_urls: true
 default_channels:
   - https://mirrors.shanhe.com/anaconda/pkgs/main
+  - https://mirrors.shanhe.com/anaconda/pkgs/free
   - https://mirrors.shanhe.com/anaconda/pkgs/r
-  - https://mirrors.shanhe.com/anaconda/pkgs/msys2
 custom_channels:
-  bioconda: https://mirrors.shanhe.com/anaconda/cloud
   conda-forge: https://mirrors.shanhe.com/anaconda/cloud
+  pytorch: https://mirrors.shanhe.com/anaconda/cloud
+  msys2: https://mirrors.shanhe.com/anaconda/cloud
+  bioconda: https://mirrors.shanhe.com/anaconda/cloud
 ssl_verify: false
 EOT
 
@@ -165,16 +179,12 @@ index-url = https://mirrors.shanhe.com/simple
 trusted-host = mirrors.shanhe.com
 EOT
 
-COPY <<"EOT" /etc/apt/sources.list
-deb https://mirrors.shanhe.com/ubuntu/ focal main restricted universe multiverse
-deb-src https://mirrors.shanhe.com/ubuntu/ focal main restricted universe multiverse
-deb https://mirrors.shanhe.com/ubuntu/ focal-security main restricted universe multiverse
-deb-src https://mirrors.shanhe.com/ubuntu/ focal-security main restricted universe multiverse
-deb https://mirrors.shanhe.com/ubuntu/ focal-updates main restricted universe multiverse
-deb-src https://mirrors.shanhe.com/ubuntu/ focal-updates main restricted universe multiverse
-deb https://mirrors.shanhe.com/ubuntu/ focal-backports main restricted universe multiverse
-deb-src https://mirrors.shanhe.com/ubuntu/ focal-backports main restricted universe multiverse
+RUN <<EOT bash
+	rm -f /etc/apt/sources.list.d/cuda.list
+	sed -i "s@http://.*mirrors.aliyun.com@https://mirrors.shanhe.com@g" /etc/apt/sources.list.d/ubuntu.sources
+	sed -i "s@http://.*security.ubuntu.com@https://mirrors.shanhe.com@g" /etc/apt/sources.list.d/ubuntu.sources
 EOT
 
-COPY ./appendix/entrypoint.sh /docker/entrypoint.sh
-ENTRYPOINT ["sh", "/docker/entrypoint.sh"]
+# 6817, 6818, 6819: slurm
+
+COPY ./rootfs/entrypoint.sh /docker/entrypoint.sh
