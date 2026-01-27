@@ -187,6 +187,10 @@ RUN <<EOT bash
 	sed -i "s@http://.*security.ubuntu.com@https://mirrors.shanhe.com@g" /etc/apt/sources.list.d/ubuntu.sources
 EOT
 
+EXPOSE 5000 43800
+
+# 5000: mlflow
+# 43800: aim
 # 6817, 6818, 6819: slurm
 
 COPY ./rootfs/entrypoint.sh /docker/entrypoint.sh

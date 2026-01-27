@@ -142,6 +142,13 @@ start_ssh_service() {
 	service ssh start
 }
 
+start_tracker_services() {
+	log "Starting Aim service..."
+	service aim start
+
+	log "Starting MLflow service..."
+	service mlflow start
+}
 # Main function
 main() {
 	log "Initializing Docker container..."
@@ -161,6 +168,8 @@ main() {
 
 	# Start Slurm services
 	start_slurm_services
+
+	start_tracker_services
 
 	log "Initialization complete, container is ready"
 }
