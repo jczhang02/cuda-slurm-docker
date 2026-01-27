@@ -187,8 +187,8 @@ EOT
 
 EXPOSE 5000 43800
 
+# 4380: aim
 # 5000: mlflow
-# 43800: aim
 # 6817, 6818, 6819: slurm
 
 COPY ./rootfs/entrypoint.sh /docker/entrypoint.sh

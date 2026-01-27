@@ -14,7 +14,7 @@ NAME="aim"
 CONDA_HOME="/opt/conda/"
 DAEMON="${CONDA_HOME}/bin/aim"
 WORKDIR="/jczhang02/aim"
-DAEMON_ARGS="up --host 0.0.0.0 --port 43800 --repo ${WORKDIR}"
+DAEMON_ARGS="up --host 0.0.0.0 --port 4380 --repo ${WORKDIR}"
 
 PIDFILE="/var/run/$NAME.pid"
 USER="root"
