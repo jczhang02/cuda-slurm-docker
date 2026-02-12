@@ -20,6 +20,7 @@ RUN sed -i s@/archive.ubuntu.com/@/mirrors.aliyun.com/@g /etc/apt/sources.list.d
 	ca-certificates \
 	net-tools \
 	cmake \
+	supervisor \
 	curl \
 	git \
 	direnv \
@@ -31,6 +32,7 @@ RUN sed -i s@/archive.ubuntu.com/@/mirrors.aliyun.com/@g /etc/apt/sources.list.d
 	unzip \
 	vim \
 	wget \
+	rsync \
 	tzdata \
 	tmux \
 	btop \
@@ -39,7 +41,7 @@ RUN sed -i s@/archive.ubuntu.com/@/mirrors.aliyun.com/@g /etc/apt/sources.list.d
 	&& apt-get clean \
 	&& echo "en_US.UTF-8 UTF-8" > /etc/locale.gen \
 	&& locale-gen \
-	&& bash -c "$(curl -fsSL https://raw.githubusercontent.com/ohmybash/oh-my-bash/master/tools/install.sh)"
+	&& bash -c "$(curl -fsSL https://raw.githubusercontent.com/ohmybash/oh-my-bash/master/tools/install.sh)" 
 
 
 # common
@@ -61,7 +63,7 @@ ENV PYTHONIOENCODING=UTF-8
 ENV LANG=en_US.UTF-8
 ENV LC_ALL=en_US.UTF-8
 ENV PATH="/opt/conda/bin:${PATH}"
-ENV TORCH_CUDA_ARCH_LIST="5.2;7.0+PTX;7.5;8.0;8.6;9.0"
+ENV TORCH_CUDA_ARCH_LIST="5.2;7.0+PTX;7.5;8.0;8.6;9.0;12.0"
 ENV TORCH_NVCC_FLAGS="-Xfatbin -compress-all"
 ENV CMAKE_PREFIX_PATH="$(dirname $(which conda))/../"
 ENV TZ=Asia/Shanghai
@@ -77,11 +79,12 @@ RUN wget --no-hsts --quiet https://github.com/conda-forge/miniforge/releases/dow
 	&& ${CONDA_DIR}/bin/conda clean --force-pkgs-dirs --all --yes \
 	&& ${CONDA_DIR}/bin/conda init bash \
 	&& mamba shell init --shell bash \
-	&& pip install --no-cache-dir mlflow aim
+	&& conda install starship -c conda-forge -y \
+	&& echo 'eval "$(starship init bash)"' >> /root/.bashrc
 
-COPY ./rootfs/aim ./rootfs/mlflow /etc/init.d/
 
 COPY --from=ghcr.io/astral-sh/uv:${UV_VERSION} /uv /uvx /bin/
+COPY ./rootfs/uv.toml /root/.config/uv/
 
 RUN  pip install --upgrade pip --no-cache-dir \
 	&& ln -s /opt/conda/bin/pip /usr/local/bin/pip3 \
@@ -125,12 +128,11 @@ RUN rm -rf /root/.cache | true
 # Slurm
 FROM unison AS slurm
 
-RUN <<EOT bash
-	apt-get update
-	apt-get install -y munge mysql-server slurm-wlm slurmdbd
-	apt-get clean
-	rm -rf /var/lib/apt/lists/* 
-EOT
+
+RUN apt-get update \
+	&& apt-get install -y munge mysql-server slurm-wlm slurmdbd default-libmysqlclient-dev \
+	&& apt-get clean \
+	&& rm -rf /var/lib/apt/lists/* 
 
 COPY <<"EOT" /etc/mysql/conf.d/mysql.cnf
 [mysqld]
@@ -143,17 +145,25 @@ COPY ./rootfs/slurmdbd.conf /etc/slurm/slurmdbd.conf
 COPY ./rootfs/slurm.conf /etc/slurm/slurm.conf
 COPY ./rootfs/cgroup.conf /etc/slurm/cgroup.conf
 
-RUN <<EOT bash
-	usermod -d /var/lib/mysql/ mysql
-	mkdir /var/spool/slurmd
-	mkdir /var/spool/slurmctld
-	chown slurm:slurm /var/spool/slurmd
-	chown slurm:slurm /var/spool/slurmctld
-EOT
+
+RUN usermod -d /var/lib/mysql/ mysql \
+	&& mkdir /var/spool/slurmd \
+	&& mkdir /var/spool/slurmctld \
+	&& chown slurm:slurm /var/spool/slurmd \
+	&& chown slurm:slurm /var/spool/slurmctld 
+
+# MlFlow
+FROM slurm AS mlflow
+
+ARG MLFLOW_VERSION=3.9.0
+
+RUN pip install --no-cache-dir "mlflow==$MLFLOW_VERSION"  
+
+COPY  ./rootfs/mlflow.conf /etc/supervisor/conf.d/mlflow.conf
 
 
 # Shanhe
-FROM slurm AS shanhe
+FROM mlflow AS shanhe
 
 RUN rm -f /opt/conda/.condarc
 
@@ -185,10 +195,10 @@ RUN <<EOT bash
 	sed -i "s@http://.*security.ubuntu.com@https://mirrors.shanhe.com@g" /etc/apt/sources.list.d/ubuntu.sources
 EOT
 
-EXPOSE 30000 30001
+EXPOSE 30000 30001 30002 30003
 
-# 30000: aim
-# 30001: mlflow
+# 30000: mlflow
 # 6817, 6818, 6819: slurm
+
 
 COPY ./rootfs/entrypoint.sh /docker/entrypoint.sh

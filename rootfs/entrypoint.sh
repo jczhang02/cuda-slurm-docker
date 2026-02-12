@@ -116,9 +116,8 @@ start_slurm_services() {
 	service mysql start
 
 	mysql <<EOF
-	create user 'jc'@'localhost' identified by 'jc@1234';
 	create database slurm_acct_db;
-	grant all PRIVILEGES on slurm_acct_db.* TO 'jc'@'localhost' with grant option;
+	create database mlflow;
 EOF
 
 	# Start Slurm database service
@@ -143,11 +142,10 @@ start_ssh_service() {
 }
 
 start_tracker_services() {
-	log "Starting Aim service..."
-	service aim start
-
 	log "Starting MLflow service..."
-	service mlflow start
+	mkdir -p /jczhang02/mlflow
+	mkdir -p /var/log/mlflow
+	service supervisor start
 }
 # Main function
 main() {
